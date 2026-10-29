@@ -15,6 +15,7 @@ import {
   relevanceOf,
   screenTopic,
   screenVerdict,
+  topicQualifiers,
   topicTerms,
 } from '../lib/relevance.js'
 import { buildRelevancePrompt, parseRelevanceReply, applyRelevanceVeto } from '../lib/summary.js'
@@ -251,4 +252,79 @@ test('a Windows help page is dropped from Geopolitics', () => {
     }),
     'drop',
   )
+})
+
+// ---------------------------------------------------------------------------
+// The qualifier gate: a compound topic is not satisfied by its category word.
+//
+// The reported bug: "LLM Local Deployment" ranked three general AI stories --
+// a Gemini model review, a Gemini cyber-defender policy note and an AI-safety
+// piece about who can pull the plug -- because the head word "llm" matched their
+// vocabulary and nothing asked for "local" or "deployment".
+// ---------------------------------------------------------------------------
+
+test('a specific topic is not satisfied by its category word alone', () => {
+  const bad = [
+    "Google's Gemini 4 Carbon looks like a diamond in the rough",
+    'Anthropic and OpenAI diverge on who should pull the plug on risky AI',
+    'Daily Update: Google says Gemini 4 Carbon will go first to a subset of cyber defenders',
+  ]
+  for (const title of bad) {
+    assert.equal(decisionOf('LLM Local Deployment', title), 'drop', `must drop for this topic: ${title}`)
+  }
+})
+
+test('a specific topic keeps stories that address its qualifiers', () => {
+  // Kept and flagged, not dropped: the headline says where it runs without naming
+  // a model, so it is evidence-backed but not certain. Dropping it would be the
+  // opposite failure from the one being fixed.
+  assert.notEqual(
+    decisionOf('LLM Local Deployment', 'Locals runs many coding agents on a Mac, three times faster'),
+    'drop',
+    '"locals" and "Mac" are local-deployment evidence',
+  )
+  assert.equal(
+    decisionOf('LLM Local Deployment', 'Running vLLM locally on a single RTX 4090'),
+    'keep',
+  )
+  assert.equal(
+    decisionOf('LLM Local Deployment', 'Self-hosting a Qwen model on your own desktop'),
+    'keep',
+    'a synonym of "local" counts',
+  )
+})
+
+test('a category topic is unaffected by the gate', () => {
+  // "AI News" has no qualifying words, so its alias expansion remains the test.
+  assert.deepEqual(topicQualifiers('AI News'), [])
+  assert.equal(decisionOf('AI News', "Google's Gemini 4 Carbon looks like a diamond in the rough"), 'keep')
+  assert.deepEqual(topicQualifiers('Geopolitics'), [])
+  assert.deepEqual(topicQualifiers('Global Economics'), [], '"global" and "economics" are both category words')
+  assert.deepEqual(topicQualifiers('Science and Technology'), [])
+})
+
+test('the qualifiers are the topic words minus its category words', () => {
+  assert.deepEqual(topicQualifiers('LLM Local Deployment'), ['local', 'deployment'])
+  assert.deepEqual(topicQualifiers('Embodied AI'), ['embodied'])
+  assert.deepEqual(topicQualifiers('????'), [], 'a single CJK topic has no separable qualifier')
+})
+
+test('a subject named in the guidance satisfies the qualifier gate', () => {
+  // The reader said what "local deployment" means for them, so their vocabulary is
+  // evidence. Without this, a story that says "Ollama" but never "local" is lost.
+  const verdict = relevanceOf(
+    { title: 'Ollama ships a new quantized runtime', url: 'https://example.com/a' },
+    topicTerms('LLM Local Deployment', { extraTerms: ['ollama'] }),
+  )
+  assert.notEqual(screenVerdict(verdict, 'ollama ships a new quantized runtime'), 'drop')
+})
+
+test('the rescue path never restores a hit that failed the qualifier gate', () => {
+  // A topic whose only hits are category news must report "no relevant news",
+  // not rescue them back because they carry strong AI vocabulary.
+  const result = screenTopic('LLM Local Deployment', [
+    { url: 'https://example.com/a', title: "Google's Gemini 4 Carbon looks like a diamond in the rough" },
+    { url: 'https://example.com/b', title: 'Anthropic and OpenAI diverge on who should pull the plug on risky AI' },
+  ])
+  assert.equal(result.kept.length, 0, `nothing should survive; got ${JSON.stringify(result.kept.map((hit) => hit.title))}`)
 })

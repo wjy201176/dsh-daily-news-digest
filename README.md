@@ -206,6 +206,30 @@ and could outrank real news. And the source count now counts **publishers**, not
 search plans: one page found by two queries, or one outlet's two subdomains, used
 to count as two independent sources, inflating the ranking's top signal.
 
+### A compound topic is not its category word
+
+`LLM Local Deployment` is not satisfied by anything that mentions a language model.
+Its head word (`llm`) names the domain; `local` and `deployment` are what the reader
+asked for. Treating the head word as sufficient let a Gemini model review, a
+Gemini cyber-defender policy note and an AI-safety story about who can "pull the
+plug" into a digest about running models on your own hardware — all three ranked.
+
+So `topicQualifiers()` separates the topic's own discriminating words from the ones
+that only name a category (`ai`, `llm`, `news`, `geopolitics`, `economics`,
+`science`, `global`, …). When a topic has qualifiers, a hit must show evidence of
+at least one of them — in any of a small set of synonyms, because a story about
+self-hosting never says "local deployment", and it may instead carry a subject the
+reader named in their guidance.
+
+A topic with no qualifiers is a category, and keeps the behaviour it had: `AI News`
+and `Geopolitics` still lean on their alias expansion.
+
+The same distinction decides the **beat sweep**. A category has no reporting under
+its own name, so it is swept through the organisations in its field — that is how
+the Anthropic IPO was found under "AI News". A specific topic does have reporting
+under its own name, and sweeping general AI companies for it returns exactly the
+general AI news the reader did not ask for. So the sweep runs only for categories.
+
 ## Relevance is not news
 
 Being about the topic is necessary and not sufficient. A second judgement asks
@@ -424,10 +448,10 @@ without any code change. If a run looks thin, check the provider before the plug
 npm test
 ```
 
-297 assertions across 20 files, covering query construction, both screens, the
-ranking contract, guidance parsing, skill planning and its fallback, the review
-pass and its fail-safe, the cookie cache, the report renderer, the
-scheduled-delivery path and the client page.
+308 assertions across 20 files, covering query construction, both screens, the
+topic-qualifier gate, the ranking contract, guidance parsing, skill planning and
+its fallback, the review pass and its fail-safe, the cookie cache, the report
+renderer, the scheduled-delivery path and the client page.
 
 ## License
 

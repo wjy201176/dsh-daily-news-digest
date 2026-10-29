@@ -249,3 +249,36 @@ test('the parsed guidance and the skill agree on the hard sets', () => {
   assert.deepEqual(skill.preferHosts, parsed.preferHosts)
   assert.deepEqual(skill.avoidHosts, parsed.avoidHosts)
 })
+
+test('a specific topic is not swept through its category organizations', () => {
+  // The reported bug: "LLM Local Deployment" planned "OpenAI Anthropic" queries,
+  // which returned general AI news. The sweep exists for a category, which has no
+  // reporting under its own name; a specific topic does.
+  const specific = buildSkill('LLM Local Deployment', '', { day: DAY })
+  assert.equal(specific.isCategory, false)
+  assert.deepEqual(specific.qualifiers, ['local', 'deployment'])
+  assert.ok(
+    !specific.plan.some((entry) => entry.angle === 'beat'),
+    `a specific topic must not plan a beat sweep; got ${JSON.stringify(specific.plan.map((entry) => entry.query))}`,
+  )
+
+  const category = buildSkill('Geopolitics', '', { day: DAY })
+  assert.equal(category.isCategory, true)
+  assert.ok(category.plan.some((entry) => entry.angle === 'beat'), 'a category still sweeps its organizations')
+})
+
+test('a category topic is still swept when it has only category words', () => {
+  // All four are categories, so none is gated by qualifiers. Whether the sweep
+  // actually produces queries depends on the beat catalogue: "Science and
+  // Technology" maps to no beat, so it plans no entities — correct, not a
+  // regression.
+  for (const topic of ['AI News', 'Global Economics', 'Science and Technology', 'Geopolitics']) {
+    const skill = buildSkill(topic, '', { day: DAY })
+    assert.equal(skill.isCategory, true, `${topic} must be treated as a category`)
+    assert.deepEqual(skill.qualifiers, [], `${topic} has no qualifying words`)
+  }
+  for (const topic of ['AI News', 'Global Economics', 'Geopolitics']) {
+    const skill = buildSkill(topic, '', { day: DAY })
+    assert.ok(skill.plan.some((entry) => entry.angle === 'beat'), `${topic} must sweep its organizations`)
+  }
+})

@@ -400,6 +400,17 @@ on-screen one. `--headless --print-to-pdf` needs no window and no display; a
 throwaway `--user-data-dir` is used because Edge will not start headless against a
 profile a normal window already holds.
 
+The print is retried once. It failed once while Edge was busy and the identical
+call succeeded seconds later, and a scheduled run has no second chance from the
+user.
+
+**A delivery failure is recorded, not lost.** The digest is saved before delivery
+runs — it has to be, or a failed send would lose the whole digest — so the outcome
+was set on an in-memory copy that vanished with the process, and a run that emailed
+nothing looked exactly like one that had. The outcome is now written back to the
+stored digest as `digest.delivery`, and the timeline row says whether that day was
+emailed.
+
 Story URLs are printed under each headline as well as linked, because a printed or
 forwarded PDF loses the click target and the reader would have no way to reach the
 article.
@@ -485,7 +496,7 @@ without any code change. If a run looks thin, check the provider before the plug
 npm test
 ```
 
-317 assertions across 20 files, covering query construction, both screens, the
+320 assertions across 20 files, covering query construction, both screens, the
 topic-qualifier gate, the open-source rule, the ranking contract, guidance parsing, skill planning and
 its fallback, the review pass and its fail-safe, the cookie cache, the report
 renderer, the scheduled-delivery path and the client page.

@@ -64,6 +64,8 @@ window.__ModuleLoader__.load({
       wallNote: '部分需要登录的来源未能读取：{e}',
       searchFailedNote: '检索失败 {n}/{of} 次，因此结果可能为空：{e}',
       searchAllFailed: '全部 {of} 次检索都失败了，因此没有任何结果。这是检索服务的问题，不是今天没有新闻。原因：{e}',
+      historyMailed: '已邮递',
+      historyMailFailed: '邮件未发送',
       cookiesOk: '已使用 Edge 中的登录状态（{n} 条 Cookie）',
       cookiesSaved: '已使用先前保存的 Edge 登录状态（{n} 条 Cookie，{age} 分钟前读取）',
       cookiesLocked: 'Edge 正在运行，Cookie 数据库被占用，且尚无已保存的副本。请在 Edge 关闭时运行一次「摘要」，之后即可在 Edge 运行时继续使用登录状态。',
@@ -139,6 +141,8 @@ window.__ModuleLoader__.load({
       wallNote: 'Some sources that need a sign-in could not be read: {e}',
       searchFailedNote: '{n} of {of} searches failed, so this result may be empty: {e}',
       searchAllFailed: 'All {of} searches failed, so there are no results. This is a search service problem, not a quiet news day. Reason: {e}',
+      historyMailed: 'emailed',
+      historyMailFailed: 'email failed',
       cookiesOk: 'Using your Edge sign-ins ({n} cookies)',
       cookiesSaved: 'Using your saved Edge sign-ins ({n} cookies, read {age} min ago)',
       cookiesLocked: 'Edge is running, so its cookie database is locked, and no saved copy exists yet. Run Summarize once while Edge is closed to save your sign-ins; after that they keep working while Edge is open.',
@@ -221,6 +225,8 @@ window.__ModuleLoader__.load({
 .dnd-timeline-item[data-active="true"] .dnd-timeline-open{border-color:var(--dsw-alias-border-l2);background:var(--dsw-alias-interactive-bg-hover)}
 .dnd-timeline-when{color:var(--dsw-alias-label-primary);font-weight:500}
 .dnd-timeline-meta{color:var(--dsw-alias-label-tertiary);font-size:11px}
+.dnd-timeline-mail{font-size:11px;color:var(--dsw-alias-label-tertiary);white-space:nowrap}
+.dnd-timeline-mail-failed{color:var(--dsw-alias-state-error-primary,#b42318);font-weight:600}
 .dnd-timeline-topics{color:var(--dsw-alias-label-secondary);font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%}
 .dnd-timeline-action{color:var(--dsw-alias-brand-primary);font-size:11px;white-space:nowrap;opacity:.85}
 .dnd-timeline-open:hover .dnd-timeline-action{opacity:1;text-decoration:underline}
@@ -688,6 +694,14 @@ window.__ModuleLoader__.load({
                   { className: 'dnd-timeline-meta' },
                   `${entry.topicCount ?? entry.topics?.length ?? 0} ${t('topicsWord')} · ${entry.storyCount ?? 0} ${t('storiesWord')}`,
                 ),
+                // Whether the scheduled run managed to email this digest. The
+                // outcome used to live only in the finished job, so a run that
+                // rendered a digest and failed to send it left no trace at all.
+                entry.delivery?.mail?.sent === true
+                  ? h('span', { className: 'dnd-timeline-mail' }, t('historyMailed'))
+                  : entry.delivery !== undefined && entry.delivery !== null
+                    ? h('span', { className: 'dnd-timeline-mail dnd-timeline-mail-failed' }, t('historyMailFailed'))
+                    : null,
                 entry.topics !== undefined && entry.topics.length > 0
                   ? h('span', { className: 'dnd-timeline-topics' }, entry.topics.slice(0, 4).join(' · '))
                   : null,

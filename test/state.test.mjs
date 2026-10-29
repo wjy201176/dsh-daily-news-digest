@@ -150,3 +150,22 @@ test('removeFromHistory reports an unknown id as not removed', () => {
   assert.equal(patch.history.length, 1)
   assert.deepEqual(patch.digest, { id: 'a' })
 })
+
+test('a history row says whether the digest was emailed', () => {
+  // The runner saved the digest before delivery and then set `delivery` on the
+  // in-memory copy only, so whether the scheduled email went out was unknowable
+  // once the process ended. The row now carries it.
+  const base = { id: 'd1', createdAt: '2026-10-29T22:02:05.038Z', day: '2026-10-29', topics: [{ topic: 'AI News', stories: [] }] }
+
+  const sent = historySummary({ ...base, delivery: { at: 'x', to: 'a@b.c', pdf: { bytes: 10 }, mail: { sent: true } } })
+  assert.equal(sent.delivery.sent, true)
+
+  const failed = historySummary({ ...base, delivery: { at: 'x', to: 'a@b.c', pdf: { bytes: 10 }, mail: { error: 'Outlook is not running' } } })
+  assert.equal(failed.delivery.sent, false, 'a failed send must not read as sent')
+
+  const pdfFailed = historySummary({ ...base, delivery: { at: 'x', to: 'a@b.c', pdf: { error: 'Edge was not found' }, mail: null } })
+  assert.equal(pdfFailed.delivery.sent, false)
+
+  const manual = historySummary(base)
+  assert.equal(manual.delivery, null, 'a manual run has no delivery to report')
+})

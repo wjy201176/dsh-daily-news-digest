@@ -74,5 +74,7 @@
   "remove": "删除这一行",
   "digestAt": "生成于 {time}",
   "topicsWord": "个主题",
-  "sourcesWord": "个来源"
+  "sourcesWord": "个来源",
+  "historyMailed": "已邮递",
+  "historyMailFailed": "邮件未发送"
 }

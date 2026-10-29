@@ -74,5 +74,7 @@
   "remove": "Remove this row",
   "digestAt": "Generated {time}",
   "topicsWord": "topics",
-  "sourcesWord": "sources"
+  "sourcesWord": "sources",
+  "historyMailed": "emailed",
+  "historyMailFailed": "email failed"
 }

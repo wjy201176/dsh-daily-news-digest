@@ -8,7 +8,7 @@
 
 import assert from 'node:assert/strict'
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
-import { existsSync } from 'node:fs'
+import { existsSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
@@ -165,5 +165,57 @@ test('a print that writes nothing is reported as a failure', async () => {
   assert.equal(result.ok, false)
   assert.match(result.reason, /without writing/)
   assert.equal(existsSync(join(dir, 'out.pdf')), false)
+  await rm(dir, { recursive: true, force: true })
+})
+
+test('a transient print failure is retried once by the printer itself', async () => {
+  // The observed failure: the headless print returned no file while Edge was busy,
+  // and the identical call succeeded seconds later. A scheduled run has no second
+  // chance from the user, so the printer takes one itself. The first attempt writes
+  // nothing; the second writes the file.
+  const dir = await mkdtemp(join(tmpdir(), 'dnd-pdf-'))
+  const html = join(dir, 'r.html')
+  const out = join(dir, 'out.pdf')
+  await writeFile(html, '<!doctype html><p>x</p>', 'utf8')
+
+  let attempts = 0
+  const spawn = (_cmd, args, _opts, callback) => {
+    attempts += 1
+    if (attempts === 2) {
+      // Find --print-to-pdf=<path> and write it, as Edge would.
+      const flag = args.find((arg) => arg.startsWith('--print-to-pdf='))
+      if (flag) writeFileSync(flag.slice('--print-to-pdf='.length), '%PDF-1.4 test', 'utf8')
+    }
+    callback(null, '')
+    return { on() {} }
+  }
+
+  const result = await printToPdf({ htmlPath: html, outPath: out, edgePath: 'fake', spawn })
+  assert.equal(attempts, 2, 'a failed print must be attempted twice')
+  assert.equal(result.ok, true, 'the retry decides the outcome')
+  assert.ok(result.bytes > 0)
+  await rm(dir, { recursive: true, force: true })
+})
+
+test('retries can be turned off, and a persistent failure still fails', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'dnd-pdf-'))
+  const html = join(dir, 'r.html')
+  await writeFile(html, '<!doctype html><p>x</p>', 'utf8')
+
+  let attempts = 0
+  const spawn = (_cmd, _args, _opts, callback) => {
+    attempts += 1
+    callback(null, '')
+    return { on() {} }
+  }
+
+  const once = await printToPdf({ htmlPath: html, outPath: join(dir, 'a.pdf'), edgePath: 'fake', spawn, retries: 0 })
+  assert.equal(once.ok, false)
+  assert.equal(attempts, 1, 'retries: 0 means one attempt')
+
+  attempts = 0
+  const twice = await printToPdf({ htmlPath: html, outPath: join(dir, 'b.pdf'), edgePath: 'fake', spawn })
+  assert.equal(twice.ok, false, 'a print that never works must not be reported as success')
+  assert.equal(attempts, 2)
   await rm(dir, { recursive: true, force: true })
 })

@@ -148,7 +148,9 @@ export function apply(ctx, config) {
     const result = { at: new Date().toISOString(), to: recipient, pdf: null, mail: null }
 
     // The PDF is produced from the same HTML the Edge window shows, so the emailed
-    // copy and the on-screen report cannot drift apart.
+    // copy and the on-screen report cannot drift apart. `printToPdf` retries once
+    // itself: the headless print failed once while Edge was busy and succeeded
+    // seconds later, and a scheduled run gets no second chance from the user.
     const html = buildReport(digest, { lang: options.reportLang })
     const htmlFile = reportFile(digest.id, html)
     const printed = await printToPdf({ htmlPath: htmlFile, outPath: pdfPath(digest.id), edgePath: options.edgePath })
@@ -267,6 +269,16 @@ export function apply(ctx, config) {
         if (input.scheduled === true) {
           await deliver(digest).catch((error) => {
             logger?.warn?.(`daily-news-digest: scheduled delivery failed — ${String(error?.message ?? error)}`)
+            digest.delivery = { at: new Date().toISOString(), pdf: null, mail: { error: String(error?.message ?? error) } }
+          })
+          // Save again, now that `delivery` is known. The digest is written before
+          // delivery runs — it has to be, or a failed send would lose the whole
+          // digest — but that meant the outcome lived only in memory and vanished
+          // with the process. A scheduled run that emailed nothing then looked
+          // exactly like one that had.
+          const current = store.get()
+          await store.update(digestPatch(current, digest)).catch((error) => {
+            logger?.warn?.(`daily-news-digest: could not record the delivery outcome — ${String(error?.message ?? error)}`)
           })
         }
       })

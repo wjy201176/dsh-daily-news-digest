@@ -1,0 +1,21 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+*.tgz
+
+# Local editor and OS noise
+.DS_Store
+Thumbs.db
+*.log
+*.bak
+*.bak-*
+*.tmp-*
+
+# Local credentials and state: the plugin keeps these under $DSH_HOME, but a copy
+# can end up here when someone runs a script against the plugin directory.
+edge-cookies.json
+scheduled-token.txt
+state.json
+state.json.bak-*

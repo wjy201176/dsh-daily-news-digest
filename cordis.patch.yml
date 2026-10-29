@@ -1,0 +1,11 @@
+# Daily News Digest bundle: one row that owns the Host routes and the Client
+# panel. The Host half keeps the saved topic/source lists and runs the digest
+# job; the Client half adds the sidebar entry and the page it selects.
+- insert:
+    - id: daily-news-digest
+      name: dsh-daily-news-digest
+      config:
+        # A *scheduled* run emails its PDF here. A run started from the Summarize
+        # button never emails, whatever this says.
+        mailTo: jianyong.wang@gmail.com
+        reportLang: en

@@ -46,6 +46,7 @@
   "cookiesNote": "Sign-in credentials: {note}",
   "wallNote": "Some sources that need a sign-in could not be read: {e}",
   "searchFailedNote": "{n} of {of} searches failed, so this result may be empty: {e}",
+  "searchAllFailed": "All {of} searches failed, so there are no results. This is a search service problem, not a quiet news day. Reason: {e}",
   "cookiesOk": "Using your Edge sign-ins ({n} cookies)",
   "cookiesSaved": "Using your saved Edge sign-ins ({n} cookies, read {age} min ago)",
   "cookiesLocked": "Edge is running, so its cookie database is locked, and no saved copy exists yet. Run Summarize once while Edge is closed to save your sign-ins; after that they keep working while Edge is open.",

@@ -202,6 +202,34 @@ test('the report omits the evergreen note when nothing was evergreen', () => {
   assert.doesNotMatch(html, /Skipped \d+ on-topic/, 'no claim may be made about a filter that removed nothing')
 })
 
+test('a total search failure is reported, not shown as a quiet news day', () => {
+  // The reported bug: the search provider was unconfigured, every query failed,
+  // and the report still said "the stories are listed as collected" with no
+  // stories. That reads as a partial success instead of a broken run.
+  const broken = {
+    ...digest,
+    topics: [{ topic: 'AI News', brief: '', stories: [] }],
+    summarized: false,
+    notes: { searches: { failed: 157, of: 157, error: 'DeepSeek search has no API key', query: 'x' } },
+    filtered: [],
+  }
+  const html = buildReport(broken, { lang: 'en' })
+  assert.match(html, /All 157 searches failed/, 'the failure must be stated')
+  assert.match(html, /DeepSeek search has no API key/, 'the reason must be carried through')
+  assert.doesNotMatch(html, /stories are listed as collected/, 'an empty digest must not claim to list stories')
+})
+
+test('a partial search failure is still reported', () => {
+  const partial = { ...digest, notes: { searches: { failed: 3, of: 20, error: 'timeout', query: 'x' } } }
+  const html = buildReport(partial, { lang: 'en' })
+  assert.match(html, /3 of 20 searches failed/)
+})
+
+test('a digest with stories and no model summary still explains itself', () => {
+  const html = buildReport({ ...digest, summarized: false }, { lang: 'en' })
+  assert.match(html, /stories are listed as collected/, 'the fallback note is right when there are stories')
+})
+
 test('the report survives a malformed digest instead of throwing', () => {
   for (const bad of [null, undefined, {}, { topics: 'nope' }, { topics: [null] }]) {
     const html = buildReport(bad, { lang: 'en' })

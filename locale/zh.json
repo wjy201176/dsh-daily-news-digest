@@ -46,6 +46,7 @@
   "cookiesNote": "登录凭证：{note}",
   "wallNote": "部分需要登录的来源未能读取：{e}",
   "searchFailedNote": "检索失败 {n}/{of} 次，因此结果可能为空：{e}",
+  "searchAllFailed": "全部 {of} 次检索都失败了，因此没有任何结果。这是检索服务的问题，不是今天没有新闻。原因：{e}",
   "cookiesOk": "已使用 Edge 中的登录状态（{n} 条 Cookie）",
   "cookiesSaved": "已使用先前保存的 Edge 登录状态（{n} 条 Cookie，{age} 分钟前读取）",
   "cookiesLocked": "Edge 正在运行，Cookie 数据库被占用，且尚无已保存的副本。请在 Edge 关闭时运行一次「摘要」，之后即可在 Edge 运行时继续使用登录状态。",

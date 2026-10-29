@@ -63,6 +63,7 @@ window.__ModuleLoader__.load({
       cookiesNote: '登录凭证：{note}',
       wallNote: '部分需要登录的来源未能读取：{e}',
       searchFailedNote: '检索失败 {n}/{of} 次，因此结果可能为空：{e}',
+      searchAllFailed: '全部 {of} 次检索都失败了，因此没有任何结果。这是检索服务的问题，不是今天没有新闻。原因：{e}',
       cookiesOk: '已使用 Edge 中的登录状态（{n} 条 Cookie）',
       cookiesSaved: '已使用先前保存的 Edge 登录状态（{n} 条 Cookie，{age} 分钟前读取）',
       cookiesLocked: 'Edge 正在运行，Cookie 数据库被占用，且尚无已保存的副本。请在 Edge 关闭时运行一次「摘要」，之后即可在 Edge 运行时继续使用登录状态。',
@@ -137,6 +138,7 @@ window.__ModuleLoader__.load({
       cookiesNote: 'Sign-in credentials: {note}',
       wallNote: 'Some sources that need a sign-in could not be read: {e}',
       searchFailedNote: '{n} of {of} searches failed, so this result may be empty: {e}',
+      searchAllFailed: 'All {of} searches failed, so there are no results. This is a search service problem, not a quiet news day. Reason: {e}',
       cookiesOk: 'Using your Edge sign-ins ({n} cookies)',
       cookiesSaved: 'Using your saved Edge sign-ins ({n} cookies, read {age} min ago)',
       cookiesLocked: 'Edge is running, so its cookie database is locked, and no saved copy exists yet. Run Summarize once while Edge is closed to save your sign-ins; after that they keep working while Edge is open.',
@@ -897,6 +899,16 @@ window.__ModuleLoader__.load({
         ? job.total
         : Math.max(1, topics.filter((row) => String(row).trim() !== '').length)
 
+      // Whether the run produced anything at all, and whether the search failed
+      // outright. Both matter for what the page says: "no model summary, stories
+      // listed" is a lie when there are no stories, and a total search failure
+      // must not read as a quiet news day.
+      const storyTotal = digest === null || !Array.isArray(digest.topics)
+        ? 0
+        : digest.topics.reduce((total, topic) => total + (Array.isArray(topic?.stories) ? topic.stories.length : 0), 0)
+      const searchFailure = digest?.notes?.searches ?? null
+      const searchFailedEntirely = searchFailure !== null && Number(searchFailure.failed) >= Number(searchFailure.of) && Number(searchFailure.of) > 0
+
       return h(
         'div',
         { className: 'dnd-page' },
@@ -1021,7 +1033,12 @@ window.__ModuleLoader__.load({
                 `${t('digestAt').replace('{time}', new Date(digest.createdAt).toLocaleString())} · ${digest.topics.length} ${t('topicsWord')} · ${digest.sources.length} ${t('sourcesWord')} · ${t('perTopic').replace('{n}', String(digest.top))}`,
               ),
               digest.model !== '' ? h('div', { className: 'dnd-meta' }, t('model').replace('{model}', digest.model)) : null,
-              digest.summarized === false ? h('div', { className: 'dnd-meta' }, t('fallback')) : null,
+              // "No model summary, the stories are listed as found" is only true
+              // when there are stories. With an empty digest it reads as a
+              // partially working run instead of a broken one.
+              digest.summarized === false && storyTotal > 0
+                ? h('div', { className: 'dnd-meta' }, t('fallback'))
+                : null,
               digest.partial === true ? h('div', { className: 'dnd-status dnd-error' }, t('partial')) : null,
               // Why a login-walled source may have come back thin, in the user's
               // terms rather than as a silent absence.
@@ -1034,16 +1051,24 @@ window.__ModuleLoader__.load({
               // A failed search is not an empty day. Without this line an
               // unreachable search service and a genuinely quiet day look
               // identical: both render as "no news found".
-              digest.notes?.searches !== undefined
+              searchFailedEntirely
                 ? h(
                     'div',
                     { className: 'dnd-status dnd-error' },
-                    t('searchFailedNote')
-                      .replace('{n}', String(digest.notes.searches.failed))
-                      .replace('{of}', String(digest.notes.searches.of))
-                      .replace('{e}', String(digest.notes.searches.error ?? '')),
+                    t('searchAllFailed')
+                      .replace('{of}', String(searchFailure.of))
+                      .replace('{e}', String(searchFailure.error ?? '')),
                   )
-                : null,
+                : searchFailure !== null
+                  ? h(
+                      'div',
+                      { className: 'dnd-status dnd-error' },
+                      t('searchFailedNote')
+                        .replace('{n}', String(searchFailure.failed))
+                        .replace('{of}', String(searchFailure.of))
+                        .replace('{e}', String(searchFailure.error ?? '')),
+                    )
+                  : null,
               // What the screens removed, stated rather than left as an
               // unexplained short digest. Two counts, because they are different
               // things: off-topic noise, and on-topic pages that were not news.

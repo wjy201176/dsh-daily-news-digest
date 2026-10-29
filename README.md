@@ -2,6 +2,25 @@
 
 A DSH plugin that adds **Daily News Digest** to the left sidebar, below **Plugins**.
 
+## Install
+
+```bash
+dsh plugin add dsh-daily-news-digest
+```
+
+Or from a checkout, so edits are live:
+
+```bash
+dsh plugin add link:/path/to/daily-news-digest
+```
+
+The plugin needs the harness `web` service for search and fetch. Signed-in
+sources, the PDF report and scheduled email additionally use Microsoft Edge,
+Outlook and the DSH schedule service, each of which degrades to a reported reason
+when absent rather than failing the run.
+
+## Use
+
 The page has two editors and one button:
 
 - **Topics Interested** — one row per topic (`AI News`, `具身智能`, `LLM Local Deployment`, …).
@@ -356,3 +375,23 @@ Search and fetch go through the harness `web` service, so they use whatever
 providers the profile mounts. A profile without a usable search provider still
 opens the page and saves the editor, but Summarize reports that no results came
 back.
+
+The engine matters more than the queries. On a machine where the profile's search
+provider returned encyclopaedia pages for English news queries, five of six topics
+came back empty; pointing it at a provider that indexes news fixed the coverage
+without any code change. If a run looks thin, check the provider before the plugin.
+
+## Tests
+
+```bash
+npm test
+```
+
+265 assertions across 19 files, covering query construction, both screens, the
+ranking contract, guidance parsing, the cookie cache, the report renderer, the
+scheduled-delivery path and the client page.
+
+## License
+
+MIT — see [LICENSE](LICENSE).
+

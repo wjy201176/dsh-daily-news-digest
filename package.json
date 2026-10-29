@@ -1,7 +1,7 @@
 {
   "name": "dsh-daily-news-digest",
   "version": "0.1.0",
-  "private": true,
+  "private": false,
   "description": "Daily News Digest — a left-sidebar page that turns your topics and sources into a per-topic top-news digest, ranked by how many sources reported each story and how widely it was read.",
   "type": "module",
   "main": "index.js",
@@ -20,7 +20,8 @@
     "locale/*.json",
     "cordis.patch.yml",
     "icon.svg",
-    "README.md"
+    "README.md",
+    "LICENSE"
   ],
   "engines": {
     "node": ">=20"
@@ -41,5 +42,24 @@
   "scripts": {
     "test": "node --test test/*.test.mjs"
   },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/wjy201176/dsh-daily-news-digest.git"
+  },
+  "homepage": "https://github.com/wjy201176/dsh-daily-news-digest#readme",
+  "bugs": {
+    "url": "https://github.com/wjy201176/dsh-daily-news-digest/issues"
+  },
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "news",
+    "digest",
+    "news-aggregator",
+    "rss-alternative",
+    "search"
+  ],
+  "author": "wjy201176",
   "license": "MIT"
 }

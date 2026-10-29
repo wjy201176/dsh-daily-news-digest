@@ -101,6 +101,33 @@ test('splitGuidance finds a Chinese exclusion marker, not only a Latin one', () 
   assert.match(split.exclude, /不要教程/)
 })
 
+test('a preference stated after an exclusion stays a preference', () => {
+  // The bug this pins: splitting once at the first marker sent everything after
+  // "skip" into the exclusion half, so `prefer reuters.com` became a *rejected*
+  // host. That silently inverted the reader's instruction.
+  const split = splitGuidance('Skip tutorials. Prefer reuters.com.')
+  assert.match(split.include, /reuters\.com/)
+  assert.match(split.exclude, /tutorials/)
+  const parsed = parseGuidance('Skip tutorials. Prefer reuters.com.')
+  assert.deepEqual(parsed.preferHosts, ['reuters.com'])
+  assert.deepEqual(parsed.avoidHosts, [])
+})
+
+test('a period inside a domain, a filename or a version is not a sentence end', () => {
+  // "reuters.com", "llama.cpp" and "v0.5.22" all contain a period that must not
+  // split the instruction.
+  const parsed = parseGuidance('track llama.cpp releases and v0.5.22. Prefer arxiv.org.')
+  assert.ok(parsed.keywords.includes('llama.cpp'), `got ${JSON.stringify(parsed.keywords)}`)
+  assert.ok(parsed.keywords.includes('v0.5.22'), `got ${JSON.stringify(parsed.keywords)}`)
+  assert.deepEqual(parsed.preferHosts, ['arxiv.org'])
+})
+
+test('a comma is not a sentence boundary', () => {
+  const split = splitGuidance('only vLLM, not llama.cpp')
+  assert.match(split.include, /vLLM/)
+  assert.match(split.exclude, /llama\.cpp/)
+})
+
 test('a quoted phrase is one term, because the user wrote it deliberately', () => {
   const terms = termsOf('track "mixture of experts" research')
   assert.ok(terms.includes('mixture of experts'), 'a quoted phrase is not split into words')

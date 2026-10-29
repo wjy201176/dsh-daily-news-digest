@@ -62,13 +62,49 @@ anchored to the topic.
 The parser is deliberately conservative. It keeps quoted phrases whole, drops
 stopwords and instruction verbs ("skip" is not a search term), splits Chinese
 guidance on its list separators and strips the leading filler verb, and treats the
-clause after "exclude/skip/avoid/不要/排除/忽略" as exclusions rather than search
+clause after "exclude/skip/avoid/never/不要/排除/忽略" as exclusions rather than search
 terms. An exclusion matches the singular, the plural and the spaced compound —
 "skip homepages" catches "Home page" — but respects word boundaries, so "guides"
 does not match "guided missiles".
 
+Guidance is read **sentence by sentence**, because a sentence can change direction:
+in "Skip tutorials. Prefer reuters.com." the second sentence is a preference, and
+splitting once at the first marker would have turned `reuters.com` into a rejected
+host. A period only ends a sentence when it is followed by a new one, so
+`reuters.com`, `llama.cpp` and `v0.5.22` survive intact.
+
 The guidance is stored with its topic, echoed on the digest, and printed in the
 stored report, so a reopened digest still says what the search was told.
+
+## Topic skills
+
+Parsed guidance is not the same as an operational plan, so each topic's guidance is
+compiled into a **skill** (`lib/skill.js`) with three parts:
+
+| Part | What it is |
+|---|---|
+| `plan` | Queries ranked by precision, each tagged with the angle that produced it: the reader's quoted phrase, the topic, a roundup, their subjects, subjects anchored to the topic, their preferred hosts, then the beat sweep. Bounded at 14, because search is rate-limited. |
+| `fallback` | Broader, **undated** phrasings used only when the plan returns nothing. A dated query is precise and brittle; a thin topic needs width, and a topic the search can reach should not come back blank because one phrasing missed. |
+| `criteria` | The guidance restated as statements a reviewer can apply, e.g. *"Reject anything about: tutorials."* |
+
+**The plan is spent in order.** The reader's own subjects come before the wide beat
+sweep, so a category topic does not drown its specific request in a list of
+companies.
+
+**A review pass applies the criteria.** When a topic has guidance and a model is
+available, the candidates are reviewed before ranking: the model gets the guidance
+verbatim, the derived criteria and each candidate, and replies with the ones to
+drop and why. It may only *remove* — never add, rewrite or reorder — so the ranking
+stays the pipeline's decision and the digest stays auditable.
+
+The review fails safe. A reply that would remove every candidate is discarded and
+logged, because a confused or hostile model must not blank a topic the deterministic
+screens already accepted. Without a model the plan and the hard filters still work;
+only the review is skipped.
+
+**It is visible.** Each topic carries `skill` on the digest — the planned queries
+with their angles, the criteria, how many candidates were reviewed and what was
+removed — and both the page and the stored PDF report it under the guidance line.
 
 ## How a topic is searched
 
@@ -332,6 +368,7 @@ triggered by the page.
 | `lib/recency.js` | Article-vs-section judgement and publication dates |
 | `lib/relevance.js` | Topic screening: is this hit about the user's topic? |
 | `lib/guidance.js` | Per-topic search guidance: keywords, exclusions, the note for the model |
+| `lib/skill.js` | Compiles guidance into a query plan, a fallback plan and review criteria |
 | `lib/pdf.js` | Print the report HTML to PDF with headless Edge |
 | `lib/mail.js` | Compose the digest email and send it through Outlook |
 | `lib/newsworthiness.js` | News screening: is this page reporting an event? |
@@ -387,8 +424,9 @@ without any code change. If a run looks thin, check the provider before the plug
 npm test
 ```
 
-265 assertions across 19 files, covering query construction, both screens, the
-ranking contract, guidance parsing, the cookie cache, the report renderer, the
+297 assertions across 20 files, covering query construction, both screens, the
+ranking contract, guidance parsing, skill planning and its fallback, the review
+pass and its fail-safe, the cookie cache, the report renderer, the
 scheduled-delivery path and the client page.
 
 ## License

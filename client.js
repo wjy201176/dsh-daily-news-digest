@@ -30,6 +30,12 @@ window.__ModuleLoader__.load({
       guidanceOpen: '为该主题添加检索指引',
       guidanceClose: '收起检索指引',
       guidanceLabel: '检索指引：',
+      auditTitle: '检索计划与复核（{n} 条查询）',
+      auditReviewed: '已复核 {n} 条候选，移除 {dropped} 条',
+      auditFallback: '其中 {n} 条来自更宽的备用检索',
+      auditExcluded: '指引直接排除 {n} 条',
+      auditCriteria: '指引的应用方式：',
+      auditReasons: '移除原因：',
       addTopic: '添加主题',
       sourcesTitle: '指定的来源',
       sourcesHint: '一行一个来源，可以是网站（CNN.com）、公司或个人博客（QbitAI）、论坛（reddit、知乎）或新闻数据源（OpenBB）。',
@@ -98,6 +104,12 @@ window.__ModuleLoader__.load({
       guidanceOpen: 'Add search guidance for this topic',
       guidanceClose: 'Hide search guidance',
       guidanceLabel: 'Search guidance:',
+      auditTitle: 'Search plan and review ({n} queries)',
+      auditReviewed: '{n} candidate(s) reviewed, {dropped} removed',
+      auditFallback: '{n} found by the wider fallback search',
+      auditExcluded: '{n} excluded by the guidance',
+      auditCriteria: 'How the guidance was applied:',
+      auditReasons: 'Removed because:',
       addTopic: 'Add topic',
       sourcesTitle: 'Sources Specified',
       sourcesHint: 'One source per row: a website (CNN.com), a company or personal blog (QbitAI), a forum (reddit, Zhihu) or a news-data provider (OpenBB).',
@@ -219,6 +231,10 @@ window.__ModuleLoader__.load({
 .dnd-topic{display:flex;flex-direction:column;gap:10px;border-top:1px solid var(--dsw-alias-border-l2);padding-top:16px}
 .dnd-topic h3{margin:0;font-size:15px;font-weight:600}
 .dnd-brief{margin:0;color:var(--dsw-alias-label-secondary)}
+.dnd-audit{margin:0 0 8px;font-size:12px;color:var(--dsw-alias-label-tertiary)}
+.dnd-audit summary{cursor:pointer;color:var(--dsw-alias-state-business-primary)}
+.dnd-audit-list{margin:4px 0 8px;padding-left:18px;line-height:1.5}
+.dnd-audit-angle{background:var(--dsw-alias-interactive-bg-hover);border-radius:4px;padding:0 4px;font-size:11px}
 .dnd-topic-guidance{margin:0 0 6px;padding:6px 10px;border-left:3px solid var(--dsw-alias-state-business-primary);background:var(--dsw-alias-interactive-bg-hover);border-radius:0 6px 6px 0;color:var(--dsw-alias-label-secondary);font-size:12px;white-space:pre-wrap}
 .dnd-stories{display:flex;flex-direction:column;gap:12px;margin:0;padding:0;list-style:none}
 .dnd-story{display:flex;gap:10px;align-items:flex-start}
@@ -484,6 +500,64 @@ window.__ModuleLoader__.load({
       )
     }
 
+    /**
+     * The audit trail for one topic: the plan it produced, the criteria the
+     * guidance became, and what the review removed and why.
+     *
+     * Renders nothing when the digest carries no skill, so an older stored digest
+     * still displays without an empty box.
+     */
+    function SkillAudit({ skill, t }) {
+      if (skill === null || skill === undefined || typeof skill !== 'object') return null
+      const plan = Array.isArray(skill.queries) ? skill.queries : []
+      const criteria = Array.isArray(skill.criteria) ? skill.criteria : []
+      const reasons = Array.isArray(skill.reviewReasons) ? skill.reviewReasons : []
+      if (plan.length === 0 && criteria.length === 0) return null
+
+      const notes = []
+      if (Number.isFinite(skill.reviewed) && skill.reviewed > 0) {
+        notes.push(t('auditReviewed').replace('{n}', String(skill.reviewed)).replace('{dropped}', String(skill.reviewDropped ?? 0)))
+      }
+      if (Number.isFinite(skill.usedFallback) && skill.usedFallback > 0) {
+        notes.push(t('auditFallback').replace('{n}', String(skill.usedFallback)))
+      }
+      if (Number.isFinite(skill.excluded) && skill.excluded > 0) {
+        notes.push(t('auditExcluded').replace('{n}', String(skill.excluded)))
+      }
+
+      return h(
+        'details',
+        { className: 'dnd-audit' },
+        h('summary', null, t('auditTitle').replace('{n}', String(plan.length))),
+        notes.length > 0 ? h('p', { className: 'dnd-meta' }, notes.join(' · ')) : null,
+        plan.length > 0
+          ? h(
+              'ul',
+              { className: 'dnd-audit-list' },
+              plan.map((entry, index) =>
+                h('li', { key: index }, h('code', { className: 'dnd-audit-angle' }, String(entry?.angle ?? '')), ' ', String(entry?.query ?? '')),
+              ),
+            )
+          : null,
+        criteria.length > 0
+          ? h(
+              'div',
+              null,
+              h('p', { className: 'dnd-meta' }, t('auditCriteria')),
+              h('ul', { className: 'dnd-audit-list' }, criteria.map((line, index) => h('li', { key: index }, String(line)))),
+            )
+          : null,
+        reasons.length > 0
+          ? h(
+              'div',
+              null,
+              h('p', { className: 'dnd-meta' }, t('auditReasons')),
+              h('ul', { className: 'dnd-audit-list' }, reasons.map((line, index) => h('li', { key: index }, String(line)))),
+            )
+          : null,
+      )
+    }
+
     /** One topic section of the digest. */
     function TopicSection({ topic, t }) {
       const stories = Array.isArray(topic.stories) ? topic.stories : []
@@ -496,6 +570,11 @@ window.__ModuleLoader__.load({
         typeof topic.guidance === 'string' && topic.guidance.trim() !== ''
           ? h('p', { className: 'dnd-topic-guidance' }, `${t('guidanceLabel')} ${topic.guidance}`)
           : null,
+        // How that guidance was applied: the plan, the criteria and what the
+        // review removed. Collapsed, because it is audit detail — but present,
+        // because a reader who wrote a detailed brief should not have to take the
+        // result on trust.
+        h(SkillAudit, { skill: topic.skill, t }),
         topic.brief !== '' && topic.brief !== undefined ? h('p', { className: 'dnd-brief' }, topic.brief) : null,
         stories.length === 0
           ? h('p', { className: 'dnd-meta' }, topic.reason === 'no results' ? t('noStories') : topic.reason || t('noStories'))

@@ -558,3 +558,44 @@ test('a topic with no guidance renders no guidance line', async () => {
     'an empty guidance must not leave an empty line',
   )
 })
+
+test('the page shows how the guidance was applied: the plan, the criteria and the review', async () => {
+  const topic = {
+    topic: 'LLM Local Deployment',
+    guidance: 'only vLLM, skip tutorials',
+    skill: {
+      queries: [
+        { query: 'LLM Local Deployment news October 29 2026', angle: 'topic' },
+        { query: 'vLLM October 29 2026', angle: 'subject' },
+      ],
+      fallback: ['LLM Local Deployment news'],
+      criteria: ['Reject anything about: tutorials.'],
+      usedFallback: 1,
+      excluded: 2,
+      reviewed: 4,
+      reviewDropped: 1,
+      reviewReasons: ['a tutorial, not news'],
+    },
+    brief: 'vLLM shipped a cache change.',
+    stories: [{ id: 1, title: 'vLLM merged a KV cache', url: 'https://a.com/x', line: 'It merged.', sources: ['A'], sourceCount: 1, reads: 3, measured: false, links: [] }],
+  }
+  const { tree, runtime } = await renderDigestWith(topic)
+  const elements = walk(expand(tree, runtime))
+  const audit = elements.find((node) => node.props?.className === 'dnd-audit')
+  assert.ok(audit !== undefined, 'the topic must render its audit block')
+
+  const text = JSON.stringify(elements.map((node) => node.children ?? []))
+  assert.match(text, /2 queries/, 'the plan size is stated')
+  assert.match(text, /LLM Local Deployment news October 29 2026/, 'the planned queries are listed')
+  assert.match(text, /topic/, 'the angle is labelled')
+  assert.match(text, /How the guidance was applied/, 'the criteria are shown')
+  assert.match(text, /candidate\(s\) reviewed/, 'the review outcome is stated')
+  assert.match(text, /a tutorial, not news/, 'the review reason is shown')
+})
+
+test('a topic with no skill block renders no audit block', async () => {
+  const topic = { topic: 'AI News', guidance: 'x', brief: '', stories: [] }
+  const { tree, runtime } = await renderDigestWith(topic)
+  const elements = walk(expand(tree, runtime))
+  assert.equal(elements.find((node) => node.props?.className === 'dnd-audit'), undefined)
+})

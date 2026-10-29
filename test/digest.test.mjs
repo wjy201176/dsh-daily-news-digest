@@ -40,22 +40,31 @@ function fakeWeb(table) {
  * per-topic summary — so the stub answers each with the shape that prompt asks
  * for. A single fixed answer would be fed to the wrong one.
  */
-function fakeLlm(answer, { veto = [] } = {}) {
+function fakeLlm(answer, { veto = [], review = [] } = {}) {
   const prompts = []
+  const systems = []
   return {
     prompts,
+    systems,
     vetoPrompts: [],
+    reviewPrompts: [],
     listProviders: () => [{ id: 'test-provider' }],
     listModels: async () => [{ id: 'test-model' }],
     resolveModelInfo: async () => ({}),
     async *stream(request) {
       const text = request.messages?.[0]?.content?.[0]?.text ?? ''
-      const isVeto = typeof request.system === 'string' && request.system.includes('screening search results')
+      const system = typeof request.system === 'string' ? request.system : ''
+      const isVeto = system.includes('screening search results')
+      const isReview = system.includes('reviewing candidate news stories')
       if (isVeto) {
         this.vetoPrompts.push(text)
         yield { type: 'text-delta', text: JSON.stringify({ drop: veto }) }
+      } else if (isReview) {
+        this.reviewPrompts.push(text)
+        yield { type: 'text-delta', text: JSON.stringify({ drop: review }) }
       } else {
         prompts.push(text)
+        systems.push(system)
         yield { type: 'text-delta', text: JSON.stringify(answer) }
       }
       yield { type: 'finish', reason: { kind: 'stop' } }
@@ -313,17 +322,56 @@ test('the queries ask for the day, and a category topic sweeps its organisations
   })
 
   const queries = web.queries
-  // 1. Every query must carry a time signal: the day in words.
-  for (const query of queries) {
+  // A query without the day is allowed only as a *fallback*: the skill's broader
+  // phrasings, which run only because the dated plan found nothing. Those are
+  // deliberately undated — a brittle date is the thing being escaped.
+  const dated = queries.filter((query) => /[A-Z][a-z]+ \d{1,2} \d{4}|site:[a-z.]+/.test(query))
+  assert.ok(dated.length > 0, 'the plan must send dated queries')
+  for (const query of dated) {
     assert.match(query, /[A-Z][a-z]+ \d{1,2} \d{4}$|site:[a-z.]+$/, `no day in query: ${query}`)
   }
-  // 2. The bare topic must never be the whole query.
-  assert.ok(!queries.includes('AI News'), 'the bare topic must not be sent')
+  // 2. The bare topic must never be the whole plan; it may only be a fallback.
+  assert.ok(dated.includes('AI News') === false, 'the bare topic must not be a dated query')
   // 3. A category topic must sweep the organisations that make its news.
   assert.ok(queries.some((query) => query.includes('Anthropic')), 'Anthropic must be swept for the AI beat')
   assert.ok(queries.some((query) => query.includes('OpenAI')))
   // 4. The named sources must still be asked, with the day attached.
   assert.ok(queries.some((query) => query.includes('site:cnn.com') && /2026|20\d\d/.test(query)))
+})
+
+test('a topic whose plan finds nothing retries once with the broader queries', async () => {
+  // A precise, date-bounded query is brittle. When the plan returns nothing the
+  // skill's fallbacks are tried, so a reachable topic is not reported empty.
+  const seen = []
+  const web = {
+    async search(request) {
+      seen.push(request.query)
+      // Only the undated fallback shapes return anything.
+      const dated = /[A-Z][a-z]+ \d{1,2} \d{4}/.test(request.query) || request.query.includes('site:')
+      if (dated) return { sources: [], truncated: false }
+      return {
+        sources: [{ url: 'https://example.com/a', title: 'OpenAI launches a model', snippet: '', publishedAt: localDay() }],
+        truncated: false,
+      }
+    },
+    async fetch() {
+      return { url: '', statusCode: 200, body: { kind: 'text', content: '' }, truncated: false }
+    },
+  }
+  const digest = await runDigest({
+    topics: [{ topic: 'AI News', guidance: 'OpenAI launches' }],
+    sources: ['CNN.com'],
+    top: 5,
+    web,
+    llm: null,
+    limits: { deadlineMs: 20_000 },
+  })
+  const topic = digest.topics[0]
+  assert.ok(topic.stories.length > 0, `the fallback must rescue the topic; queries were ${JSON.stringify(seen.slice(0, 8))}`)
+  // The undated shapes only appear after the dated plan failed.
+  const undated = seen.filter((query) => !/[A-Z][a-z]+ \d{1,2} \d{4}/.test(query) && !query.includes('site:'))
+  assert.ok(undated.length > 0, 'the retry must use an undated fallback')
+  assert.equal(topic.filtered.viaFallback >= 1, true, 'the digest must record that the fallback found it')
 })
 
 test('the Anthropic IPO story survives screening when the new queries find it', () => {
@@ -419,7 +467,7 @@ test('a topic without guidance still runs, and echoes an empty guidance', async 
   assert.equal(digest.topics[0].stories.length, 1, 'a bare topic string must still work')
 })
 
-test('the prompt carries the guidance as editorial direction', async () => {
+test('the summarizer prompt carries the guidance as editorial direction', async () => {
   const day = localDay()
   const web = fakeWeb({
     'AI News news': [{ url: 'https://example.com/a', title: 'OpenAI launches a model', snippet: '', publishedAt: day }],
@@ -435,9 +483,84 @@ test('the prompt carries the guidance as editorial direction', async () => {
     model: 'test-model',
     limits: { deadlineMs: 20_000, llmTimeoutMs: 5_000 },
   })
-  const prompt = llm.prompts[0] ?? ''
-  assert.match(prompt, /focus on model releases, not policy/, 'the model must see the guidance verbatim')
-  assert.match(prompt, /Reader guidance for this topic:/, 'the guidance must be labelled, not appended as a stray line')
+  // With guidance the run makes two model calls per topic: the review, then the
+  // summarizer. The summarizer's guidance line is the one under test here.
+  assert.ok(llm.prompts.length >= 1, 'the summarizer must be called')
+  const summarizer = llm.prompts[0]
+  assert.match(summarizer, /focus on model releases, not policy/, 'the model must see the guidance verbatim')
+  assert.match(summarizer, /Reader guidance for this topic:/, 'the guidance must be labelled, not appended as a stray line')
+})
+
+test('a topic with guidance is reviewed against that guidance before summarizing', async () => {
+  const day = localDay()
+  const web = fakeWeb({
+    'AI News news': [
+      { url: 'https://example.com/keep', title: 'OpenAI launches a frontier model', snippet: '', publishedAt: day },
+      { url: 'https://example.com/drop', title: 'OpenAI hires a policy lobbyist', snippet: '', publishedAt: day },
+    ],
+  })
+  // The reviewer drops the policy story; the summarizer then writes the brief.
+  const llm = fakeLlm({ brief: 'One launch.', stories: [] }, { review: [{ id: 2, reason: 'policy, not a model release' }] })
+  const digest = await runDigest({
+    topics: [{ topic: 'AI News', guidance: 'model releases only, not policy' }],
+    sources: ['CNN.com'],
+    top: 5,
+    web,
+    llm,
+    provider: 'test-provider',
+    model: 'test-model',
+    limits: { deadlineMs: 20_000, llmTimeoutMs: 5_000 },
+  })
+  assert.equal(llm.reviewPrompts.length, 1, 'the review must run once')
+  assert.match(llm.reviewPrompts[0], /model releases only, not policy/, 'the reviewer sees the guidance verbatim')
+  assert.match(llm.reviewPrompts[0], /Criteria:/, 'the reviewer is given criteria, not just a topic')
+  const titles = digest.topics[0].stories.map((story) => story.title)
+  assert.ok(!titles.some((title) => /lobbyist/.test(title)), `the reviewed-out story must be gone; got ${JSON.stringify(titles)}`)
+  assert.ok(titles.some((title) => /launches a frontier model/.test(title)), 'the wanted story must survive the review')
+})
+
+test('a review that drops every candidate is ignored rather than emptying the topic', async () => {
+  // A confused or hostile reply must not blank a topic the deterministic screens
+  // already accepted.
+  const day = localDay()
+  const web = fakeWeb({
+    'AI News news': [{ url: 'https://example.com/a', title: 'OpenAI launches a model', snippet: '', publishedAt: day }],
+  })
+  const llm = fakeLlm({ brief: 'x', stories: [] }, { review: [{ id: 1, reason: 'nope' }] })
+  const digest = await runDigest({
+    topics: [{ topic: 'AI News', guidance: 'model releases' }],
+    sources: ['CNN.com'],
+    top: 5,
+    web,
+    llm,
+    provider: 'test-provider',
+    model: 'test-model',
+    limits: { deadlineMs: 20_000, llmTimeoutMs: 5_000 },
+  })
+  assert.equal(digest.topics[0].stories.length, 1, 'the topic must not be emptied by a blanket rejection')
+})
+
+test('without a model the plan and the hard filters still work', async () => {
+  // The deterministic path must stand on its own: no model means no review, but
+  // the query plan and the exclusions are unaffected.
+  const day = localDay()
+  const web = fakeWeb({
+    'AI News news': [
+      { url: 'https://example.com/a', title: 'OpenAI launches a model', snippet: '', publishedAt: day },
+      { url: 'https://example.com/b', title: 'A tutorial on prompt engineering', snippet: '', publishedAt: day },
+    ],
+  })
+  const digest = await runDigest({
+    topics: [{ topic: 'AI News', guidance: 'OpenAI launches, skip tutorials' }],
+    sources: ['CNN.com'],
+    top: 5,
+    web,
+    llm: null,
+    limits: { deadlineMs: 20_000 },
+  })
+  const titles = digest.topics[0].stories.map((story) => story.title)
+  assert.ok(titles.some((title) => /launches a model/.test(title)), 'the plan still finds the story')
+  assert.ok(!titles.some((title) => /tutorial/i.test(title)), 'the hard exclusion still applies')
 })
 
 test('a topic with no guidance sends no guidance line to the model', async () => {

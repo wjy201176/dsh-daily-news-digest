@@ -18,7 +18,7 @@ import { StateStore, dataDir, cleanList, cleanTopics, clampTop, digestPatch, his
 import { plansForSources } from './lib/sources.js'
 import { runDigest, DEFAULTS } from './lib/digest.js'
 import { resolveRoute } from './lib/llm.js'
-import { CookieJar, describeCookies, readEdgeCookies } from './lib/cookies.js'
+import { CookieJar, COOKIE_RETRY_MS as COOKIE_RETRY_INTERVAL, describeCookies, readEdgeCookies } from './lib/cookies.js'
 import { buildReport } from './lib/report.js'
 import { fileUrl, findEdge, openWindow, reportFile } from './lib/launch.js'
 import { pdfPath, printToPdf } from './lib/pdf.js'
@@ -52,12 +52,12 @@ const JOB_TTL_MS = 30 * 60_000
  * How often to retry saving an Edge cookie snapshot.
  *
  * Edge holds its cookie database with no sharing for as long as it runs, so a
- * snapshot can only be captured in a gap when Edge is closed. Retrying on this
- * interval means such a gap is found without the user having to close Edge on
- * purpose. A failed attempt is one failed file copy, so the interval can be short
- * enough to catch a brief gap.
+ * snapshot can only be captured in a gap when Edge is closed. The interval is
+ * short because the window is short: quitting Edge and reopening it a minute later
+ * would otherwise be missed, and the user would be told to do something they had
+ * just done. A failed attempt costs one failed file open, not a copy.
  */
-const COOKIE_RETRY_MS = 2 * 60_000
+const COOKIE_RETRY_MS = COOKIE_RETRY_INTERVAL
 
 export function apply(ctx, config) {
   const options = { ...DEFAULTS, ...REPORT_DEFAULTS, ...(config ?? {}) }

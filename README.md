@@ -352,9 +352,22 @@ privilege the plugin does not have. No amount of retrying changes that.
 So the snapshot is **saved and reused**. A successful read writes
 `$DSH_HOME/daily-news-digest/edge-cookies.json`, and a later read that finds the
 database locked falls back to that file instead of reporting failure. The plugin
-also tries to capture a snapshot at startup and every two minutes while loaded,
-because a read can only succeed in a gap when Edge is closed — that gap is found
-without the user having to close Edge on purpose.
+also tries to capture a snapshot at startup and every **five seconds** while loaded,
+because a read can only succeed in a gap when Edge is closed.
+
+The interval and the cache are deliberately short. A failed read used to be cached
+for ten minutes and retried every two, so a user who quit Edge to let the snapshot
+save still saw "locked" for up to ten minutes — the advice to close Edge appeared
+not to work. Now only a *live, successful* read earns the long TTL; a failure is
+rechecked within seconds, so quitting Edge is followed by a saved snapshot almost
+immediately.
+
+**Closing the Edge window is not the same as quitting Edge**, and this was the
+worse half of the bug. Edge keeps running in the background after its last window
+closes — 32 or more processes, cookie database still locked — so "close Edge once"
+was an instruction most users could not carry out, followed by nothing happening.
+The note now says so, and says the snapshot is saved on its own, so the user is not
+asked to close Edge *and* re-run Summarize.
 
 The effect is that the "quit Edge" instruction appears **at most once**, and only
 when no snapshot exists yet. After the first successful capture, a running Edge no
@@ -472,7 +485,7 @@ without any code change. If a run looks thin, check the provider before the plug
 npm test
 ```
 
-315 assertions across 20 files, covering query construction, both screens, the
+317 assertions across 20 files, covering query construction, both screens, the
 topic-qualifier gate, the open-source rule, the ranking contract, guidance parsing, skill planning and
 its fallback, the review pass and its fail-safe, the cookie cache, the report
 renderer, the scheduled-delivery path and the client page.

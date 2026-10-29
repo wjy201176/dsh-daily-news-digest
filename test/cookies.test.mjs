@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
 
-import { CookieJar, decryptValue, describeCookies, hostMatches } from '../lib/cookies.js'
+import { CookieJar, COOKIE_RETRY_MS, decryptValue, describeCookies, hostMatches } from '../lib/cookies.js'
 
 test('a domain cookie matches the bare host and its subdomains', () => {
   assert.equal(hostMatches('.x.com', 'x.com'), true)
@@ -42,9 +42,13 @@ test('describeCookies explains a locked Edge instead of failing', () => {
   assert.equal(locked.available, false)
   assert.equal(locked.locked, true)
   assert.match(locked.note, /Edge is running/)
-  // The advice must not be "quit Edge" alone: a saved copy makes quitting
-  // unnecessary after the first successful read.
-  assert.match(locked.note, /saved copy/)
+  // The old advice — "close Edge once and run Summarize" — was impossible to
+  // follow, because closing the window leaves Edge running in the background and
+  // the database locked. The note must say that, and must say the save happens on
+  // its own rather than asking the user to re-run anything.
+  assert.match(locked.note, /Closing the window is not enough/)
+  assert.match(locked.note, /background/)
+  assert.match(locked.note, /automatically within seconds/)
 })
 
 test('describeCookies reports an available jar with its count', () => {
@@ -161,4 +165,34 @@ test('the jar returns no header when Edge is locked', async () => {
   jar.cached = { ok: false, locked: true, cookies: [] }
   jar.readAt = Date.now()
   assert.equal(await jar.headerFor('x.com'), '')
+})
+
+test('a locked read is retried within seconds, not cached for the full TTL', async () => {
+  // The bug: a failed read was cached for COOKIE_TTL_MS (10 minutes). A user who
+  // quit Edge to let the snapshot save still saw "locked" for up to ten minutes, so
+  // the advice appeared not to work. Only a live successful read earns the long TTL.
+  const jar = new CookieJar({ cacheFile: null, ttlMs: 10 * 60_000 })
+  let attempts = 0
+  const original = jar.get.bind(jar)
+  // Drive the cache path directly: seed a failed result, then read it back.
+  jar.cached = { ok: false, locked: true, cookies: [], reason: 'Edge is running' }
+  jar.readAt = Date.now()
+  const first = await jar.get()
+  assert.equal(first.locked, true, 'the cached failure stands for a moment')
+  assert.ok(COOKIE_RETRY_MS <= 10_000, `a retry must happen within seconds; got ${COOKIE_RETRY_MS}ms`)
+
+  // After the retry window the failure must not be served from cache.
+  jar.readAt = Date.now() - (COOKIE_RETRY_MS + 1)
+  const second = await jar.get()
+  assert.notEqual(second, first, 'the stale failure must be re-read instead of returned')
+  attempts += 1
+  assert.equal(attempts, 1)
+})
+
+test('a live successful read keeps the full TTL', async () => {
+  const jar = new CookieJar({ cacheFile: null, ttlMs: 10 * 60_000 })
+  const live = { ok: true, cookies: [{ name: 'a', value: 'b' }], profile: 'Default' }
+  jar.cached = live
+  jar.readAt = Date.now()
+  assert.equal(await jar.get(), live, 'a live snapshot is reusable')
 })

@@ -18,8 +18,10 @@ import {
   avoidHostHit,
   buildReviewPrompt,
   buildSkill,
+  closedModelOnly,
   matchesQuoted,
   parseReviewReply,
+  requiresOpenSource,
   reviewCriteria,
 } from '../lib/skill.js'
 
@@ -281,4 +283,83 @@ test('a category topic is still swept when it has only category words', () => {
     const skill = buildSkill(topic, '', { day: DAY })
     assert.ok(skill.plan.some((entry) => entry.angle === 'beat'), `${topic} must sweep its organizations`)
   }
+})
+
+// ---------------------------------------------------------------------------
+// The open-source rule: a deployment topic can only concern a model whose weights
+// you can obtain.
+// ---------------------------------------------------------------------------
+
+test('a deployment topic requires an open model, and others do not', () => {
+  assert.equal(requiresOpenSource(['local', 'deployment']), true)
+  assert.equal(requiresOpenSource(['deployment']), true)
+  assert.equal(requiresOpenSource(['self-host']), true)
+  assert.equal(requiresOpenSource(['embodied']), false, 'a robotics topic is not a deployment topic')
+  assert.equal(requiresOpenSource([]), false, 'a category has no rule to derive')
+
+  assert.equal(buildSkill('LLM Local Deployment', '', { day: DAY }).openSourceOnly, true)
+  assert.equal(buildSkill('AI News', '', { day: DAY }).openSourceOnly, false)
+  assert.equal(buildSkill('Geopolitics', '', { day: DAY }).openSourceOnly, false)
+})
+
+test('the open-source rule appears in the criteria the reviewer applies', () => {
+  const skill = buildSkill('LLM Local Deployment', '', { day: DAY })
+  const text = skill.criteria.join('\n')
+  assert.match(text, /open-source/i, 'the rule must reach the model')
+  assert.match(text, /closed model/i)
+  // A category must not inherit a rule it has no basis for.
+  const news = buildSkill('AI News', '', { day: DAY })
+  assert.doesNotMatch(news.criteria.join('\n'), /open-source/i)
+})
+
+test('a story about a closed model alone is out of scope for a deployment topic', () => {
+  const closed = [
+    'Gemini 4 Carbon can now run locally on your laptop',
+    'Claude Opus 5.5 review: the best assistant yet',
+    'GPT-6.1 Terra cuts API prices, but the weights stay private',
+  ]
+  for (const title of closed) {
+    assert.equal(closedModelOnly({ title }).closedOnly, true, `must read as closed: ${title}`)
+  }
+})
+
+test('owning an open model, runtime or licence rescues a story that names a closed one', () => {
+  const open = [
+    'Qwen3.8-27B can be deployed locally on a single RTX 4090',
+    'OpenAI releases an open-weight model under Apache 2.0',
+    'Ollama adds support for a new quantized runtime',
+    'Self-hosting a 27B model on a Mac Mini',
+    'Running DeepSeek-V4.1-Flash locally with vLLM',
+  ]
+  for (const title of open) {
+    assert.equal(closedModelOnly({ title }).closedOnly, false, `must read as open: ${title}`)
+  }
+})
+
+test('deployment language alone does not make a closed model deployable', () => {
+  // "runs locally" says where a closed model executes, not that its weights exist.
+  // Counting it as open evidence was the first draft of this rule and it let the
+  // exact story the reader objected to straight through.
+  assert.equal(closedModelOnly({ title: 'Gemini can now run locally on a laptop' }).closedOnly, true)
+  assert.equal(closedModelOnly({ title: 'Self-hosted deployment of Claude is still impossible' }).closedOnly, true)
+})
+
+test('the open-source filter drops closed-model stories and keeps open ones', () => {
+  const skill = buildSkill('LLM Local Deployment', '', { day: DAY })
+  const hits = [
+    { title: 'Gemini 4 Carbon can now run locally on your laptop', url: 'https://example.com/1' },
+    { title: 'Qwen3.8-27B can be deployed locally on a single RTX 4090', url: 'https://example.com/2' },
+    { title: 'Ollama adds support for a new quantized runtime', url: 'https://example.com/3' },
+  ]
+  const result = applySkillFilters(hits, skill)
+  assert.equal(result.kept.length, 2)
+  assert.ok(!result.kept.some((hit) => /Gemini/.test(hit.title)))
+  assert.ok(result.dropped.some((hit) => /closed model/.test(hit.droppedBy)))
+})
+
+test('the open-source filter is off for a topic that has no such rule', () => {
+  const skill = buildSkill('AI News', '', { day: DAY })
+  const hits = [{ title: 'Gemini 4 Carbon can now run locally on your laptop', url: 'https://example.com/1' }]
+  const result = applySkillFilters(hits, skill)
+  assert.equal(result.kept.length, 1, 'AI News has no reason to reject a closed model')
 })

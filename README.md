@@ -230,6 +230,30 @@ the Anthropic IPO was found under "AI News". A specific topic does have reportin
 under its own name, and sweeping general AI companies for it returns exactly the
 general AI news the reader did not ask for. So the sweep runs only for categories.
 
+### Only open models can be deployed locally
+
+A deployment topic carries a rule the others do not: a model whose weights are not
+published cannot be self-hosted, so a story about a hosted model is about *using*
+it, not about running it. `requiresOpenSource()` derives the rule from the
+qualifiers — it applies to `local`/`deployment`/`self-host` topics and to nothing
+else, so `AI News` and `Geopolitics` are unaffected.
+
+The rule reaches the pipeline twice:
+
+- as a **criterion** the reviewer applies, stated in the same words a reader would:
+  a story about a closed model is out of scope unless it also concerns an
+  open-weight model;
+- as a **deterministic filter** in `applySkillFilters()`, so it holds when no model
+  is available.
+
+Evidence of openness is what counts: a named open-weight family (`Qwen`, `Llama`,
+`DeepSeek`, `Mistral`, `Gemma`, …), a runtime that only serves self-hosted weights
+(`Ollama`, `vLLM`, `SGLang`), a file format (`GGUF`, `GPTQ`, `AWQ`), or the licence
+language of an open release. Language about running *something* locally does not
+count — "Gemini can now run locally" says where a closed model executes, and
+counting that as openness was the first draft of this rule and it let the exact
+story the reader objected to straight through.
+
 ## Relevance is not news
 
 Being about the topic is necessary and not sufficient. A second judgement asks
@@ -448,8 +472,8 @@ without any code change. If a run looks thin, check the provider before the plug
 npm test
 ```
 
-308 assertions across 20 files, covering query construction, both screens, the
-topic-qualifier gate, the ranking contract, guidance parsing, skill planning and
+315 assertions across 20 files, covering query construction, both screens, the
+topic-qualifier gate, the open-source rule, the ranking contract, guidance parsing, skill planning and
 its fallback, the review pass and its fail-safe, the cookie cache, the report
 renderer, the scheduled-delivery path and the client page.
 

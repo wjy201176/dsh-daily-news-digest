@@ -324,6 +324,31 @@ export function apply(ctx, config) {
       return false
     }
 
+    /**
+     * Does this request carry the scheduled token?
+     *
+     * Accepted as an `x-dnd-token` header or a `token` query parameter, because a
+     * scheduled reminder assembling a plain GET has no convenient header surface.
+     * @param {object} req - the request.
+     * @returns {boolean} whether it matches the configured token.
+     */
+    const tokenMatches = (req) => {
+      const expected = String(options.scheduledToken ?? '')
+      if (expected === '') return false
+      let given = ''
+      try {
+        const url = new URL(req.url ?? '/', 'http://local')
+        given = String(url.searchParams.get('token') ?? '')
+      } catch {
+        given = ''
+      }
+      if (given === '') {
+        const header = req.headers?.['x-dnd-token']
+        given = Array.isArray(header) ? String(header[0] ?? '') : String(header ?? '')
+      }
+      return given !== '' && given === expected
+    }
+
     route('prefix', API_PREFIX, async (req, res) => {
       const path = new URL(req.url ?? '/', 'http://local').pathname.slice(API_PREFIX.length)
       // The scheduled entry point authenticates with its own token instead of the
@@ -332,7 +357,13 @@ export function apply(ctx, config) {
       // reject it with 401 before the token was ever read. The token is the
       // credential for that route, and nothing else is reachable without the
       // session fence.
-      if (path !== '/scheduled-run' && refused(req, res)) return
+      //
+      // `/job` is the one other route the same caller needs. A scheduled run is
+      // started by the token and then has to be watched until it finishes, and
+      // `/job` sat behind the fence — so the caller that started the run was refused
+      // the only way to see how it went. The token is accepted on that route too,
+      // and only for reading the job.
+      if (path !== '/scheduled-run' && !(path === '/job' && tokenMatches(req)) && refused(req, res)) return
       try {
         await dispatch(path, req, res)
       } catch (error) {

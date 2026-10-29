@@ -605,3 +605,16 @@ test('a failed file write is reported instead of launching a blank window', asyn
 test.after(async () => {
   await rm(home, { recursive: true, force: true })
 })
+
+test('the token that starts a scheduled run can also watch it', async () => {
+  // The hole this closes: /scheduled-run accepts the token, but /job sat behind the
+  // GUI fence, so the caller that started a run was refused the only way to see
+  // whether it finished. A scheduled reminder, which has no browser session, could
+  // start a run and then never learn its outcome.
+  const source = readFileSync(new URL('../index.js', import.meta.url), 'utf8')
+  assert.match(source, /path === '\/job' && tokenMatches\(req\)/, 'the job route must accept the scheduled token')
+  assert.match(source, /x-dnd-token/, 'the token is accepted as a header')
+  assert.match(source, /searchParams\.get\('token'\)/, 'and as a query parameter')
+  // Everything else stays fenced.
+  assert.match(source, /if \(path !== '\/scheduled-run' && /, 'other routes stay behind the fence')
+})

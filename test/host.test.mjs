@@ -156,6 +156,10 @@ function boot({ web, llm, writeReport }) {
     deadlineMs: 15_000,
     llmTimeoutMs: 5_000,
     findEdge: () => 'C:\\fake\\msedge.exe',
+    // `edgePath` is what the PDF step actually reads. Without it the step falls
+    // through to the real Edge lookup and a unit test launches a browser — which it
+    // silently did for as long as an empty `edgePath` was mistaken for "no Edge".
+    edgePath: 'C:\\fake\\msedge.exe',
     launch: (input) => {
       launches.push(input)
       return { ok: true }

@@ -400,9 +400,19 @@ on-screen one. `--headless --print-to-pdf` needs no window and no display; a
 throwaway `--user-data-dir` is used because Edge will not start headless against a
 profile a normal window already holds.
 
-The print is retried once. It failed once while Edge was busy and the identical
-call succeeded seconds later, and a scheduled run has no second chance from the
-user.
+**An empty `edgePath` used to mean "no Edge".** The Host passes
+`REPORT_DEFAULTS.edgePath`, which is `''`, and `'' ?? lookup()` is `''` — so the
+configured-but-empty case skipped the Edge lookup entirely and reported "Microsoft
+Edge was not found" without looking. That was the actual reason the scheduled PDF
+never rendered. It also hid itself in the tests, which configured no `edgePath`
+either: the PDF step short-circuited instantly, so the host tests never launched a
+browser and stayed fast. With the lookup working, those tests began starting a real
+Edge, which is how the bug was found a second time — the test fixture now pins
+`edgePath` to a fake path so a unit test still never opens a browser.
+
+The print is also retried once. That was added for what looked like a transient
+failure and could never have helped this one — both attempts took the same broken
+line — but it is cheap and a real headless failure has no other second chance.
 
 **A delivery failure is recorded, not lost.** The digest is saved before delivery
 runs — it has to be, or a failed send would lose the whole digest — so the outcome
@@ -410,6 +420,11 @@ was set on an in-memory copy that vanished with the process, and a run that emai
 nothing looked exactly like one that had. The outcome is now written back to the
 stored digest as `digest.delivery`, and the timeline row says whether that day was
 emailed.
+
+A scheduled run is also no longer reported `done` until it has attempted delivery.
+It was marked finished as soon as the digest existed, so a caller that polled until
+`done` and then read `delivery` saw nothing, because the email had not been tried
+yet.
 
 Story URLs are printed under each headline as well as linked, because a printed or
 forwarded PDF loses the click target and the reader would have no way to reach the
@@ -496,7 +511,7 @@ without any code change. If a run looks thin, check the provider before the plug
 npm test
 ```
 
-320 assertions across 20 files, covering query construction, both screens, the
+323 assertions across 20 files, covering query construction, both screens, the
 topic-qualifier gate, the open-source rule, the ranking contract, guidance parsing, skill planning and
 its fallback, the review pass and its fail-safe, the cookie cache, the report
 renderer, the scheduled-delivery path and the client page.

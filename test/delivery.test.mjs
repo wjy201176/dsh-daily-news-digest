@@ -219,3 +219,37 @@ test('retries can be turned off, and a persistent failure still fails', async ()
   assert.equal(attempts, 2)
   await rm(dir, { recursive: true, force: true })
 })
+
+test('an unconfigured edgePath means "look for Edge", not "no Edge"', async () => {
+  // The real reason the scheduled PDF never rendered. The Host passes
+  // REPORT_DEFAULTS.edgePath, which is the empty string, and `'' ?? x` is `''` —
+  // so the lookup was skipped and the failure reported as "Microsoft Edge was not
+  // found" without Edge ever being searched for. The retry added for a supposed
+  // transient failure could never have helped: both attempts took this line.
+  const dir = await mkdtemp(join(tmpdir(), 'dnd-pdf-'))
+  const html = join(dir, 'r.html')
+  const out = join(dir, 'out.pdf')
+  await writeFile(html, '<!doctype html><p>x</p>', 'utf8')
+
+  const spawn = (_cmd, args, _opts, callback) => {
+    const flag = args.find((arg) => arg.startsWith('--print-to-pdf='))
+    if (flag) writeFileSync(flag.slice('--print-to-pdf='.length), '%PDF-1.4 test', 'utf8')
+    callback(null, '')
+    return { on() {} }
+  }
+
+  // Exactly the Host's shape: edgePath is configured but empty.
+  const result = await printToPdf({ htmlPath: html, outPath: out, edgePath: '', locate: () => 'fake-edge', spawn })
+  assert.equal(result.ok, true, `an empty edgePath must fall through to the lookup; got ${JSON.stringify(result)}`)
+  await rm(dir, { recursive: true, force: true })
+})
+
+test('a genuinely missing Edge is still reported as missing', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'dnd-pdf-'))
+  const html = join(dir, 'r.html')
+  await writeFile(html, '<!doctype html><p>x</p>', 'utf8')
+  const result = await printToPdf({ htmlPath: html, outPath: join(dir, 'o.pdf'), edgePath: '', locate: () => '' })
+  assert.equal(result.ok, false)
+  assert.match(result.reason, /Edge was not found/)
+  await rm(dir, { recursive: true, force: true })
+})

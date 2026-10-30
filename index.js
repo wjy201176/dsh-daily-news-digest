@@ -255,13 +255,14 @@ export function apply(ctx, config) {
     })()
       .then(async (digest) => {
         run.digest = digest
-        run.phase = 'done'
-        last = { phase: 'done', digest, startedAt: run.startedAt, finishedAt: Date.now(), error: null, done: run.done, total: run.topics }
+        // Mark the run finished only after the delivery attempt. A scheduled run is
+        // not done when its digest exists — it is done when it has tried to send it.
+        // Reporting `done` first meant a caller that polled until `done` then read
+        // `delivery` saw nothing, because the email had not been attempted yet.
         const state = store.get()
         await store.update(digestPatch(state, digest)).catch((error) => {
           logger?.warn?.(`daily-news-digest: could not save the digest — ${String(error?.message ?? error)}`)
         })
-        logger?.info?.(`daily-news-digest: run finished in ${digest.durationMs}ms`)
 
         // A scheduled run is the only run that emails. A run the user pressed
         // Summarize for must never send mail: they are looking at the result, and
@@ -281,6 +282,10 @@ export function apply(ctx, config) {
             logger?.warn?.(`daily-news-digest: could not record the delivery outcome — ${String(error?.message ?? error)}`)
           })
         }
+
+        run.phase = 'done'
+        last = { phase: 'done', digest, startedAt: run.startedAt, finishedAt: Date.now(), error: null, done: run.done, total: run.topics }
+        logger?.info?.(`daily-news-digest: run finished in ${digest.durationMs}ms`)
       })
       .catch((error) => {
         run.phase = 'failed'

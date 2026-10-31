@@ -265,7 +265,21 @@ test('the scheduled endpoint is reachable without a browser session, and only wi
   assert.equal(wrong.status, 403)
   const right = await call(webServer, 'POST', '/scheduled-run', { token: 'test-token' })
   assert.equal(right.status, 200)
+  // Let the run it started finish. It is not waited on to assert anything here, but
+  // leaving it in flight made the *next* test flaky: a run already under way makes
+  // `/run` answer "busy" instead of the "no topics" refusal that test expects.
+  await settle(webServer)
 })
+
+/** Poll until no run is in flight, so one test cannot leak a job into the next. */
+async function settle(webServer) {
+  for (let i = 0; i < 200; i += 1) {
+    const poll = await call(webServer, 'GET', '/job')
+    if (poll.json.value.phase !== 'running') return poll.json.value
+    await new Promise((resolve) => setTimeout(resolve, 10))
+  }
+  throw new Error('the run did not settle')
+}
 
 test('a run with no topics is refused as a bad request', async () => {
   const webServer = boot({ web: fakeWeb(() => []), llm: fakeLlm() })

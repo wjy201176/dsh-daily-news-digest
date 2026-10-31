@@ -493,6 +493,13 @@ survives upgrades:
     edgePath: ""            # empty = find Edge in its usual install locations
 ```
 
+**The deadline is shared across the topics still to run.** A run that cannot finish
+every topic should still finish as many as it can properly. Before this, one topic
+could spend the whole `deadlineMs` on a slow model and leave the rest unsearched: a
+live run came back with one topic in the digest and five reporting "the run hit its
+time limit before this topic was searched", because the first topic had waited out
+the 90s LLM timeout twice.
+
 ## Verification limits
 
 Search and fetch go through the harness `web` service, so they use whatever
@@ -511,7 +518,7 @@ without any code change. If a run looks thin, check the provider before the plug
 npm test
 ```
 
-323 assertions across 20 files, covering query construction, both screens, the
+324 assertions across 20 files, covering query construction, both screens, the
 topic-qualifier gate, the open-source rule, the ranking contract, guidance parsing, skill planning and
 its fallback, the review pass and its fail-safe, the cookie cache, the report
 renderer, the scheduled-delivery path and the client page.

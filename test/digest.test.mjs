@@ -661,3 +661,62 @@ test('the prompt tells the model the date and that a story is an article', async
   assert.match(prompt, new RegExp(`Date of the digest: ${iso}`), 'the prompt must state the day')
   assert.match(prompt, /published: \d{4}-\d{2}-\d{2}/, 'each story must carry its publication date')
 })
+
+test('one unresponsive topic does not starve the rest of the run', async () => {
+  // The observed failure: a model provider stopped answering. The first topic waited
+  // out the 90s LLM timeout twice, the 180s deadline ran out, and five of six topics
+  // came back as "the run hit its time limit before this topic was searched" — the
+  // digest had one topic in it. The remaining time is now shared across the topics
+  // still to run, so a run that cannot finish everything still finishes some.
+  const day = localDay()
+  // The headline echoes the topic, so the relevance screen keeps the hit. The
+  // scenario under test is a slow model, not a filtering decision — with a headline
+  // that matches no topic, nothing reaches the model and the test proves nothing.
+  const web = {
+    async search(request) {
+      const topic = String(request.query).split(' ')[0]
+      return {
+        sources: [{ url: `https://example.com/${topic}`, title: `${topic} ships a new model today`, snippet: '', publishedAt: day }],
+        truncated: false,
+      }
+    },
+    async fetch() {
+      return { url: '', statusCode: 200, body: { kind: 'text', content: '' }, truncated: false }
+    },
+  }
+  // A model that never answers, and only stops when its budget expires.
+  const llm = {
+    async *stream(request) {
+      const signal = request?.signal
+      await new Promise((resolve) => {
+        if (signal?.aborted === true) return resolve()
+        signal?.addEventListener?.('abort', resolve, { once: true })
+        setTimeout(resolve, 30_000)
+      })
+      if (false) yield { type: 'text-delta', text: '' }
+    },
+    listProviders: () => [{ id: 'test-provider' }],
+    listModels: async () => [{ id: 'test-model' }],
+    resolveModelInfo: async () => ({}),
+  }
+
+  const started = Date.now()
+  const digest = await runDigest({
+    topics: ['OpenAI', 'Anthropic', 'Nvidia'],
+    sources: ['CNN.com'],
+    top: 3,
+    web,
+    llm,
+    provider: 'test-provider',
+    model: 'test-model',
+    limits: { deadlineMs: 6_000, llmTimeoutMs: 60_000 },
+  })
+  const elapsed = Date.now() - started
+
+  const starved = digest.topics.filter((topic) => /hit its time limit/.test(String(topic.reason ?? ''))).length
+  // Sharing the budget lets every topic be tried. Without it the first topic spends
+  // the whole deadline and the rest are never searched at all: the live run had one
+  // topic in the digest and five reporting "the run hit its time limit".
+  assert.equal(starved, 0, `no topic may be starved; reasons were ${JSON.stringify(digest.topics.map((t) => t.reason))}`)
+  assert.ok(elapsed < 30_000, `the run must respect its deadline; took ${elapsed}ms`)
+})

@@ -222,7 +222,7 @@ test('retries can be turned off, and a persistent failure still fails', async ()
 
 test('an unconfigured edgePath means "look for Edge", not "no Edge"', async () => {
   // The real reason the scheduled PDF never rendered. The Host passes
-  // REPORT_DEFAULTS.edgePath, which is the empty string, and `'' ?? x` is `''` —
+  // REPORT_DEFAULTS.edgePath, which is the empty string, and `'' ?? x` is `''` â€”
   // so the lookup was skipped and the failure reported as "Microsoft Edge was not
   // found" without Edge ever being searched for. The retry added for a supposed
   // transient failure could never have helped: both attempts took this line.

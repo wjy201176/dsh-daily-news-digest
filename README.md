@@ -512,13 +512,33 @@ provider returned encyclopaedia pages for English news queries, five of six topi
 came back empty; pointing it at a provider that indexes news fixed the coverage
 without any code change. If a run looks thin, check the provider before the plugin.
 
+**The bundle list is fragile, and a broken search is the symptom.** Installing or
+removing any plugin rewrites `dsh.profile.bundles`, and it has twice dropped
+`dsh-free-search` — the plugin that registers the `ddg` and `exa` engines this
+profile points at. Every search then fails with
+
+```
+configured web provider "ddg" is not registered
+```
+
+which is accurate and nearly useless: the profile still contains the
+`web-search-free` config row, because that row is separate from the bundle entry
+that loads the code. If a run comes back empty, check the bundles before the
+queries.
+
+The plugin now appends the fix to that message — "add dsh-free-search back to the
+profile bundles and restart" — because the failure had already cost several days of
+digests and the raw error named no action. `searchAdvice()` in `lib/digest.js` maps
+the two failures that have actually happened; an unrecognised failure is passed
+through unchanged rather than guessed at.
+
 ## Tests
 
 ```bash
 npm test
 ```
 
-324 assertions across 20 files, covering query construction, both screens, the
+325 assertions across 20 files, covering query construction, both screens, the
 topic-qualifier gate, the open-source rule, the ranking contract, guidance parsing, skill planning and
 its fallback, the review pass and its fail-safe, the cookie cache, the report
 renderer, the scheduled-delivery path and the client page.

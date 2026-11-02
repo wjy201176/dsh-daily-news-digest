@@ -337,7 +337,7 @@ test('the page Summarize route never emails, even when mail is configured', asyn
   const webServer = boot({ web: fakeWeb(() => []), llm: fakeLlm() })
   await call(webServer, 'POST', '/save', { topics: ['AI News'], sources: ['CNN.com'], top: 5 })
   const run = await call(webServer, 'POST', '/run', { topics: ['AI News'], sources: ['CNN.com'], top: 5 })
-  assert.equal(run.status, 200)
+  assert.equal(run.status, 200, `POST /run failed: ${JSON.stringify(run.json)}`)
   // Wait for the job to settle, then confirm no delivery was recorded.
   for (let i = 0; i < 40; i += 1) {
     const job = await call(webServer, 'GET', '/job')

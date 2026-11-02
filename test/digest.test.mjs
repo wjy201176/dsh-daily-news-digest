@@ -720,3 +720,36 @@ test('one unresponsive topic does not starve the rest of the run', async () => {
   assert.equal(starved, 0, `no topic may be starved; reasons were ${JSON.stringify(digest.topics.map((t) => t.reason))}`)
   assert.ok(elapsed < 30_000, `the run must respect its deadline; took ${elapsed}ms`)
 })
+
+test('a known search failure carries advice, and an unknown one does not', async () => {
+  // Both of these have cost whole days of digests, and both arrived as a message
+  // that said what broke but not what to do about it.
+  const cases = [
+    ['configured web provider "ddg" is not registered', /add dsh-free-search back to the profile bundles/],
+    ['DeepSeek search has no API key for "DEEPSEEK_API_KEY"', /switch to one that needs none/],
+  ]
+  for (const [message, pattern] of cases) {
+    const web = {
+      async search() {
+        throw new Error(message)
+      },
+      async fetch() {
+        return { url: '', statusCode: 200, body: { kind: 'text', content: '' }, truncated: false }
+      },
+    }
+    const digest = await runDigest({ topics: ['AI News'], sources: ['CNN.com'], top: 3, web, llm: null, limits: { deadlineMs: 10_000 } })
+    assert.match(digest.notes.searches.error, pattern, `advice missing for: ${message}`)
+    assert.match(digest.notes.searches.error, new RegExp(message.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').slice(0, 20)), 'the original reason must survive')
+  }
+
+  const unknown = {
+    async search() {
+      throw new Error('something nobody has seen before')
+    },
+    async fetch() {
+      return { url: '', statusCode: 200, body: { kind: 'text', content: '' }, truncated: false }
+    },
+  }
+  const plain = await runDigest({ topics: ['AI News'], sources: ['CNN.com'], top: 3, web: unknown, llm: null, limits: { deadlineMs: 10_000 } })
+  assert.equal(plain.notes.searches.error, 'something nobody has seen before', 'an unknown failure must not be dressed up')
+})

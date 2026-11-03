@@ -137,7 +137,7 @@ test('a PDF path is derived from the digest id and cannot escape the directory',
 })
 
 test('printing a missing HTML file fails with a reason', async () => {
-  const result = await printToPdf({ htmlPath: join(tmpdir(), 'definitely-not-there-12345.html') })
+  const result = await printToPdf({ settleMs: 0, htmlPath: join(tmpdir(), 'definitely-not-there-12345.html') })
   assert.equal(result.ok, false)
   assert.match(result.reason, /not written/)
 })
@@ -146,7 +146,7 @@ test('printing with no Edge available fails with a reason', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'dnd-pdf-'))
   const html = join(dir, 'r.html')
   await writeFile(html, '<!doctype html><p>x</p>', 'utf8')
-  const result = await printToPdf({ htmlPath: html, locate: () => '' })
+  const result = await printToPdf({ settleMs: 0, htmlPath: html, locate: () => '' })
   assert.equal(result.ok, false)
   assert.match(result.reason, /Edge was not found/)
   await rm(dir, { recursive: true, force: true })
@@ -161,7 +161,7 @@ test('a print that writes nothing is reported as a failure', async () => {
     callback(null, '')
     return { on() {} }
   }
-  const result = await printToPdf({ htmlPath: html, outPath: join(dir, 'out.pdf'), edgePath: 'fake', spawn })
+  const result = await printToPdf({ settleMs: 0, htmlPath: html, outPath: join(dir, 'out.pdf'), edgePath: 'fake', spawn })
   assert.equal(result.ok, false)
   assert.match(result.reason, /without writing/)
   assert.equal(existsSync(join(dir, 'out.pdf')), false)
@@ -190,7 +190,7 @@ test('a transient print failure is retried once by the printer itself', async ()
     return { on() {} }
   }
 
-  const result = await printToPdf({ htmlPath: html, outPath: out, edgePath: 'fake', spawn })
+  const result = await printToPdf({ settleMs: 0, htmlPath: html, outPath: out, edgePath: 'fake', spawn })
   assert.equal(attempts, 2, 'a failed print must be attempted twice')
   assert.equal(result.ok, true, 'the retry decides the outcome')
   assert.ok(result.bytes > 0)
@@ -209,12 +209,12 @@ test('retries can be turned off, and a persistent failure still fails', async ()
     return { on() {} }
   }
 
-  const once = await printToPdf({ htmlPath: html, outPath: join(dir, 'a.pdf'), edgePath: 'fake', spawn, retries: 0 })
+  const once = await printToPdf({ settleMs: 0, htmlPath: html, outPath: join(dir, 'a.pdf'), edgePath: 'fake', spawn, retries: 0 })
   assert.equal(once.ok, false)
   assert.equal(attempts, 1, 'retries: 0 means one attempt')
 
   attempts = 0
-  const twice = await printToPdf({ htmlPath: html, outPath: join(dir, 'b.pdf'), edgePath: 'fake', spawn })
+  const twice = await printToPdf({ settleMs: 0, htmlPath: html, outPath: join(dir, 'b.pdf'), edgePath: 'fake', spawn })
   assert.equal(twice.ok, false, 'a print that never works must not be reported as success')
   assert.equal(attempts, 2)
   await rm(dir, { recursive: true, force: true })
@@ -239,7 +239,7 @@ test('an unconfigured edgePath means "look for Edge", not "no Edge"', async () =
   }
 
   // Exactly the Host's shape: edgePath is configured but empty.
-  const result = await printToPdf({ htmlPath: html, outPath: out, edgePath: '', locate: () => 'fake-edge', spawn })
+  const result = await printToPdf({ settleMs: 0, htmlPath: html, outPath: out, edgePath: '', locate: () => 'fake-edge', spawn })
   assert.equal(result.ok, true, `an empty edgePath must fall through to the lookup; got ${JSON.stringify(result)}`)
   await rm(dir, { recursive: true, force: true })
 })
@@ -248,8 +248,64 @@ test('a genuinely missing Edge is still reported as missing', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'dnd-pdf-'))
   const html = join(dir, 'r.html')
   await writeFile(html, '<!doctype html><p>x</p>', 'utf8')
-  const result = await printToPdf({ htmlPath: html, outPath: join(dir, 'o.pdf'), edgePath: '', locate: () => '' })
+  const result = await printToPdf({ settleMs: 0, htmlPath: html, outPath: join(dir, 'o.pdf'), edgePath: '', locate: () => '' })
   assert.equal(result.ok, false)
   assert.match(result.reason, /Edge was not found/)
+  await rm(dir, { recursive: true, force: true })
+})
+
+test('a file that appears just after Edge exits still counts as printed', async () => {
+  // The live failure: "Edge exited without writing a PDF" twice in a row on a
+  // scheduled run, while the identical call printed in 1.9s by hand seconds later.
+  // The write can become visible just after the process exits, so the check waits
+  // for the file instead of testing it once.
+  const dir = await mkdtemp(join(tmpdir(), 'dnd-pdf-'))
+  const html = join(dir, 'r.html')
+  await writeFile(html, '<!doctype html><p>x</p>', 'utf8')
+  const out = join(dir, 'late.pdf')
+
+  const spawn = (_cmd, args, _opts, callback) => {
+    const flag = args.find((arg) => arg.startsWith('--print-to-pdf='))
+    const target = flag ? flag.slice('--print-to-pdf='.length) : out
+    // Exit first, write later — the race that produced the false failure.
+    setTimeout(() => {
+      try {
+        writeFileSync(target, '%PDF-1.4 late', 'utf8')
+      } catch {
+        // ignore
+      }
+    }, 150)
+    callback(null, '')
+    return { on() {} }
+  }
+
+  const tolerant = await printToPdf({ htmlPath: html, outPath: out, edgePath: 'fake', spawn, settleMs: 2_000 })
+  assert.equal(tolerant.ok, true, `a late write must not be read as a failure: ${JSON.stringify(tolerant)}`)
+  assert.ok(tolerant.bytes > 0)
+  await rm(dir, { recursive: true, force: true })
+})
+
+test('without the settle wait, the same late write is a failure', async () => {
+  // Pins that the wait is what fixes it, rather than the fake happening to be fast.
+  const dir = await mkdtemp(join(tmpdir(), 'dnd-pdf-'))
+  const html = join(dir, 'r.html')
+  await writeFile(html, '<!doctype html><p>x</p>', 'utf8')
+  const out = join(dir, 'late.pdf')
+  const spawn = (_cmd, args, _opts, callback) => {
+    const flag = args.find((arg) => arg.startsWith('--print-to-pdf='))
+    const target = flag ? flag.slice('--print-to-pdf='.length) : out
+    setTimeout(() => {
+      try {
+        writeFileSync(target, '%PDF-1.4 late', 'utf8')
+      } catch {
+        // ignore
+      }
+    }, 150)
+    callback(null, '')
+    return { on() {} }
+  }
+  const strict = await printToPdf({ htmlPath: html, outPath: out, edgePath: 'fake', spawn, settleMs: 0, retries: 0 })
+  assert.equal(strict.ok, false)
+  assert.match(strict.reason, /without writing a PDF/)
   await rm(dir, { recursive: true, force: true })
 })

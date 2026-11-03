@@ -414,6 +414,13 @@ The print is also retried once. That was added for what looked like a transient
 failure and could never have helped this one — both attempts took the same broken
 line — but it is cheap and a real headless failure has no other second chance.
 
+**The printed file is waited for, not tested once.** A live run failed twice with
+"Edge exited without writing a PDF", and the identical call printed in 1.9s by hand
+seconds later. Edge can exit a moment before the write becomes visible, so checking
+`existsSync` in the exit callback reports a false failure for a print that succeeded
+milliseconds later. The check now waits up to `FILE_SETTLE_MS` for a non-empty file;
+`settleMs` is an option so a test that replaces Edge does not sit through it.
+
 **A delivery failure is recorded, not lost.** The digest is saved before delivery
 runs — it has to be, or a failed send would lose the whole digest — so the outcome
 was set on an in-memory copy that vanished with the process, and a run that emailed
@@ -538,7 +545,7 @@ through unchanged rather than guessed at.
 npm test
 ```
 
-325 assertions across 20 files, covering query construction, both screens, the
+327 assertions across 20 files, covering query construction, both screens, the
 topic-qualifier gate, the open-source rule, the ranking contract, guidance parsing, skill planning and
 its fallback, the review pass and its fail-safe, the cookie cache, the report
 renderer, the scheduled-delivery path and the client page.

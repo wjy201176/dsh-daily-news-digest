@@ -153,7 +153,15 @@ export function apply(ctx, config) {
     // seconds later, and a scheduled run gets no second chance from the user.
     const html = buildReport(digest, { lang: options.reportLang })
     const htmlFile = reportFile(digest.id, html)
-    const printed = await printToPdf({ htmlPath: htmlFile, outPath: pdfPath(digest.id), edgePath: options.edgePath })
+    // `settleMs` is forwarded because the print waits for the file to appear after
+    // Edge exits; a test that replaces Edge needs to shorten that wait rather than
+    // sit through it. It is unset in production, where the default applies.
+    const printed = await printToPdf({
+      htmlPath: htmlFile,
+      outPath: pdfPath(digest.id),
+      edgePath: options.edgePath,
+      settleMs: options.settleMs,
+    })
     result.pdf = printed.ok === true ? { path: printed.path, bytes: printed.bytes } : { error: printed.reason }
     if (printed.ok !== true) {
       logger?.warn?.(`daily-news-digest: scheduled PDF failed — ${printed.reason}`)

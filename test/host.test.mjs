@@ -160,6 +160,9 @@ function boot({ web, llm, writeReport }) {
     // through to the real Edge lookup and a unit test launches a browser — which it
     // silently did for as long as an empty `edgePath` was mistaken for "no Edge".
     edgePath: 'C:\\fake\\msedge.exe',
+    // The fake Edge never writes a file, so the print would otherwise sit through
+    // the real settle wait on every attempt.
+    settleMs: 0,
     launch: (input) => {
       launches.push(input)
       return { ok: true }
